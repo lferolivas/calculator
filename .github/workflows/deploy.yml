@@ -1,0 +1,50 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/476256146919/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions@project-fa804700-a17e-4ac5-bfb.iam.gserviceaccount.com'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build with Maven
+        run: mvn package
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t gcr.io/project-fa804700-a17e-4ac5-bfb/calculator:${{ github.sha }} .
+          docker push gcr.io/project-fa804700-a17e-4ac5-bfb/calculator:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy calculator \
+            --image gcr.io/project-fa804700-a17e-4ac5-bfb/calculator:${{ github.sha }} \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --port 8080
